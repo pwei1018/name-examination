@@ -17,6 +17,7 @@ export default new Vuex.Store({
     authorized: false,
     email: null,
     errorJSON: null,
+    tracingHeader: null,
 
     //Interface settings
     currentChoice: null, // CURRENT NAME BEING EXAMINED (choice number)
@@ -1070,8 +1071,12 @@ export default new Vuex.Store({
 
     setErrorJSON(state,value) {
       state.errorJSON = value
-    }
+    },
 
+    setTracingHeader(state, value) {
+      state.tracingHeader = value
+      sessionStorage.setItem('TRACE_ID', state.tracingHeader);
+    },
   },
   actions: {
     logout({commit, state}) {
@@ -1084,6 +1089,7 @@ export default new Vuex.Store({
       sessionStorage.removeItem('KEYCLOAK_EXPIRES')
       sessionStorage.removeItem('USERNAME')
       sessionStorage.removeItem('USER_ROLES')
+      sessionStorage.removeItem('TRACE_ID')
 
     },
 
@@ -1387,7 +1393,9 @@ export default new Vuex.Store({
       console.log('nrNumber updated to ' + nrNum)
 
       console.log('Getting NR data')
+      //this.dispatch('tracingStart', null).then(() => {
       dispatch('getpostgrescompInfo',nrNum)
+      //})
 
       //TODO: this is called in reset values already -- take out and test
       commit('is_making_decision', false);
@@ -1423,9 +1431,12 @@ export default new Vuex.Store({
     getCorpConflict ({state,commit,dispatch},value) {
       console.log('action: getting data for company number: ' + value.nrNumber )
       const myToken = sessionStorage.getItem('KEYCLOAK_TOKEN')
-      const url = '/api/v1/corporations/' + value.nrNumber
+      const url = 'http://localhost:5000/api/v1/corporations/' + value.nrNumber
       const vm = this
-      return axios.get(url, {headers: {Authorization: `Bearer ${myToken}`}, spinner: '.conflict-detail-spinner'}).then(response => {
+      const traceId = state.tracingHeader
+      console.log('trace id: ' + traceId)
+      const headers = Object.assign({}, {'Authorization': `Bearer ${myToken}`}, traceId)
+      return axios.get(url, {headers: headers, spinner: '.conflict-detail-spinner'}).then(response => {
         console.log('Corp Conflict response:' + response.data)
         commit('loadCorpConflictJSON',response.data)
       })
@@ -1484,15 +1495,29 @@ export default new Vuex.Store({
     runManualRecipe({dispatch,state},searchStr) {
       console.log('running manual recipe with: ', searchStr);
       if( state.currentChoice != null) {
-        this.dispatch('checkManualExactMatches',searchStr)
-        this.dispatch('checkManualSynonymMatches',searchStr)
-        this.dispatch('checkManualCobrsPhoneticMatches',searchStr)
-        this.dispatch('checkManualPhoneticMatches',searchStr)
-        // this.dispatch('checkManualConflicts',searchStr)
-        this.dispatch('checkManualTrademarks',searchStr)
-        this.dispatch('checkManualConditions',searchStr)
-        this.dispatch('checkManualHistories',searchStr)
+        this.dispatch('tracingStart', searchStr).then(() => {
+          this.dispatch('checkManualExactMatches',searchStr)
+          this.dispatch('checkManualSynonymMatches',searchStr)
+          this.dispatch('checkManualCobrsPhoneticMatches',searchStr)
+          this.dispatch('checkManualPhoneticMatches',searchStr)
+          // this.dispatch('checkManualConflicts',searchStr)
+          this.dispatch('checkManualTrademarks',searchStr)
+          this.dispatch('checkManualConditions',searchStr)
+          this.dispatch('checkManualHistories',searchStr)
+        })
       }
+    },
+
+    tracingStart( {commit,state}, query ) {
+      commit('setTracingHeader', null);
+
+      const myToken = sessionStorage.getItem('KEYCLOAK_TOKEN')
+      const url = '/api/v1/trace/start?nr=' + state.compInfo.nrNumber + '&search_name=' + query
+      console.log('URL:' + url)
+      return axios.get(url, {headers: {Authorization: `Bearer ${myToken}`}}).then(response => {
+        commit('setTracingHeader', response.data)
+      })
+        .catch(error => console.log('ERROR (start tracing): ' + error))
     },
 
     checkManualExactMatches( {commit, state}, query ) {
@@ -1517,7 +1542,8 @@ export default new Vuex.Store({
       const url = '/api/v1/exact-match?query='+query
       console.log('URL:' + url)
       const vm = this
-      return axios.get(url, {headers: {Authorization: `Bearer ${myToken}`}, spinner: '.exact-match-spinner'}).then(response => {
+      const headers = Object.assign({}, {'Authorization': `Bearer ${myToken}`}, state.tracingHeader)
+      return axios.get(url, {headers: headers, spinner: '.exact-match-spinner'}).then(response => {
         console.log('Check Exact Match Response:', JSON.stringify(response.data))
         commit('setExactMatchesConflicts', response.data)
       })
@@ -1544,7 +1570,8 @@ export default new Vuex.Store({
       console.log('URL:' + url);
       const vm = this;
       dispatch('checkToken');
-      return axios.get(url, {headers: {Authorization: `Bearer ${myToken}`}, spinner: '.synonym-match-spinner'}).then(response => {
+      const headers = Object.assign({}, {'Authorization': `Bearer ${myToken}`}, state.tracingHeader)
+      return axios.get(url, {headers: headers, spinner: '.synonym-match-spinner'}).then(response => {
         commit('setSynonymMatchesConflicts', response.data)
       })
         .catch(error => console.log('ERROR (synonym matches): ' + error))
@@ -1570,7 +1597,8 @@ export default new Vuex.Store({
       console.log('URL:' + url);
       const vm = this;
       dispatch('checkToken');
-      return axios.get(url, {headers: {Authorization: `Bearer ${myToken}`}, spinner: '.cobrs-phonetic-match-spinner'}).then(response => {
+      const headers = Object.assign({}, {'Authorization': `Bearer ${myToken}`}, state.tracingHeader)
+      return axios.get(url, {headers: headers, spinner: '.cobrs-phonetic-match-spinner'}).then(response => {
         commit('setCobrsPhoneticConflicts', response.data);
       })
         .catch(error => console.log('ERROR (CobrsPhonetic matches): ' + error))
@@ -1596,7 +1624,8 @@ export default new Vuex.Store({
       console.log('URL:' + url);
       const vm = this;
       dispatch('checkToken');
-      return axios.get(url, {headers: {Authorization: `Bearer ${myToken}`}, spinner: '.phonetic-match-spinner'}).then(response => {
+      const headers = Object.assign({}, {'Authorization': `Bearer ${myToken}`}, state.tracingHeader)
+      return axios.get(url, {headers: headers, spinner: '.phonetic-match-spinner'}).then(response => {
         commit('setPhoneticConflicts', response.data)
       })
         .catch(error => console.log('ERROR (Phonetic matches): ' + error))
@@ -1605,7 +1634,8 @@ export default new Vuex.Store({
     checkManualConditions( {commit, state},searchStr ) {
       console.log('action: manual check of restricted words and conditions for company number: ' + state.compInfo.nrNumber )
       const myToken = sessionStorage.getItem('KEYCLOAK_TOKEN')
-      const myHeader =  {headers: {Authorization: `Bearer ${myToken}`}, spinner: '.conditions-spinner'};
+      const headers = Object.assign({}, {Authorization: `Bearer ${myToken}`}, state.tracingHeader)
+      const myHeader =  {headers: headers, spinner: '.conditions-spinner'};
       const url = '/api/v1/documents:restricted_words'
       console.log('URL:' + url)
       const vm = this
@@ -1619,7 +1649,8 @@ export default new Vuex.Store({
     checkManualHistories( {commit, state},searchStr ) {
       console.log('action: manual check of history for company number: ' + state.compInfo.nrNumber + ' from solr')
       const myToken = sessionStorage.getItem('KEYCLOAK_TOKEN')
-      const myHeader =  {headers: {Authorization: `Bearer ${myToken}`}, spinner: '.history-spinner'};
+      const headers = Object.assign({}, {Authorization: `Bearer ${myToken}`}, state.tracingHeader)
+      const myHeader =  {headers: headers, spinner: '.history-spinner'};
       const url = '/api/v1/documents:histories'
       console.log('URL:' + url)
       searchStr = searchStr.replace(/\//g,' ')
@@ -1643,7 +1674,8 @@ export default new Vuex.Store({
     checkManualTrademarks( {commit, state},searchStr ) {
       console.log('action: manual check of trademarks for company number: ' + state.compInfo.nrNumber + ' from solr')
       const myToken = sessionStorage.getItem('KEYCLOAK_TOKEN')
-      const myHeader =  {headers: {Authorization: `Bearer ${myToken}`}, spinner: '.trademarks-spinner'};
+      const headers = Object.assign({}, {Authorization: `Bearer ${myToken}`}, state.tracingHeader)
+      const myHeader =  {headers: headers, spinner: '.trademarks-spinner'};
       const url = '/api/v1/documents:trademarks'
       console.log('URL:' + url)
       searchStr = searchStr.replace(/\//g,' ')
@@ -2059,5 +2091,8 @@ export default new Vuex.Store({
     errorJSON(state) {
       return state.errorJSON
     },
+    tracingHeader(state) {
+      return state.tracingHeader
+    }
   }
 })
